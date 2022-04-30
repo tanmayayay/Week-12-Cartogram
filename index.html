@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang = 'en'>
+    <head>
+        <meta charset = 'UTF-8'>
+        <title>Cartogram Visualization</title>
+        <script src="https://d3js.org/d3.v6.min.js"></script>
+        <script src="https://d3js.org/topojson.v2.min.js"></script>
+        <style>
+            body {
+                font-family: sans-serif;
+            }
+            #tooltip {
+                opacity: 0;
+                background-color: grey;
+                position: absolute;
+                font-family: sans-serif;
+                font-size: small;
+                width: 150px;
+                height: 100px;
+                text-align: center;
+            }
+            #caption {
+                margin: auto;
+                padding-top: 1%;
+                padding-bottom: 1%;
+                padding-left: 4%;
+                font-family: sans-serif;
+                font-size: 20pt;
+            }
+            #container {
+                width: 90vw;
+                height: 80vh;
+            }
+            .title {
+                font-size: 24pt;
+                font-family: sans-serif;
+            }
+            .hover {
+                fill: yellow;
+            }
+        </style>
+    </head>
+    <body>
+        <div id = 'caption'>
+            Household Income for Each State
+        </div>
+        <div id = 'container'>
+            <svg id = 'svg_choropleth' width = '40vw' height = '80vh' viewBox = '0 0 1000 800'>
+            </svg>
+            <svg id = 'svg_cartogram' width = '40vw' height = '80vh' viewBox = '0 0 1000 800' style = 'padding: 0'>
+            </svg>
+        </div>
+        <div>
+
+        </div>
+        <div id = 'tooltip'>
+            <svg id = 'svg_tooltip' width = '100%' height = '100%' viewBox = '0 0 100 100'>
+            </svg>
+        </div>
+        <script>
+            //data sources:
+            let income_cartogram = './data/income_cartogram.geojson'
+            let income_choropleth =  './data/income_choropleth.geojson'
+
+            Promise.all(
+                [
+                    d3.json(income_cartogram),
+                    d3.json(income_choropleth)
+                ], d3.autoType()).then(main)
+
+            function main(data) {
+                let geoJson_cartogram = data[0].features;
+                let geoJson_choropleth = data[1].features;
+
+                console.log(geoJson_cartogram)
+
+                mapGenerator(geoJson_choropleth, '#svg_choropleth', title = 'US Household Income Choropleth', scale = '1300')
+                mapGenerator(geoJson_cartogram, '#svg_cartogram', title = 'US Household Income Cartogram', scale = '1200')
+
+                function mapGenerator(geoData_features, svg_id, title, scale) {
+                    let width = 1000
+                    let height = 1000
+                    let svg = d3.select(svg_id)
+                        .append('svg')
+                        .attr('width', width)
+                        .attr('height', height);
+                    svg.append('text')
+                        .attr('x', width/2 - 200)
+                        .attr('y', height * 0.1)
+                        .attr('class', 'title')
+                        .text(title)
+                    let projection = d3.geoAlbersUsa()
+                        .scale(scale)
+                        .translate([width/2, 2*height/5])
+                    let geo_generator = d3.geoPath()
+                        .projection(projection);
+                    let colorInterpolator = d3.interpolateRgbBasis(["LightYellow", "DarkGreen"])
+                    let linearScale = d3.scaleLinear()
+                        .domain(d3.extent(geoData_features, d => {return d.properties.HouseholdIncome}))
+
+                    let mapCanvas = svg.append('g').attr('class', 'mapCanvas')
+                        mapCanvas.selectAll('path')
+                            .data(geoData_features)
+                            .enter()
+                            .append('path')
+                            .attr('class', 'path_geo')
+                            .attr('d', geo_generator)
+                            .attr('fill', d => colorInterpolator(linearScale(d.properties.HouseholdIncome)))
+                            //.attr('fill', 'none')
+                            .attr('stroke', 'black')
+                            .attr('stroke-width', '0.5px')
+                            .attr('class', function(d){
+                                return 'cls' + d.properties['STATEFP'].toString();
+                            })
+                            .on('mouseover', function (d) {
+                                d3.selectAll('*').classed('hover', false);
+                                d3.selectAll(`.${d3.select(this).attr('class')}`).classed('hover', true);
+                            })
+                            .on('mousemove', function (mouseData, d) {
+                                tooltip_html(d.properties.NAME, d.properties.HouseholdIncome)
+                                d3.select('#tooltip')
+                                    .style('opacity', 0.8)
+                                    .style('left', (mouseData.clientX + 10).toString() + 'px')
+                                    .style('top', (mouseData.clientY + 10).toString() + 'px')
+                            })
+                            .on('mouseout', function (mouseData, d) {
+                                d3.select('#tooltip').style('opacity', 0.0);
+                                d3.selectAll('*').classed('hover', false);
+                            })
+                        svg.call(d3.zoom()
+                            .extent([[0,0], [1000,1000]])
+                            .scaleExtent([1, 12])
+                            .on('zoom', zoomed)
+                        )
+                        function zoomed({transform}) {
+                            d3.selectAll('.mapCanvas').attr('transform', transform)
+                        }
+                }
+                function tooltip_html(name, income) {
+                    let margin = {x:-20, y:10}
+                    let plot_height = 90
+                    let income_display = d3.format(',')(income)
+
+                    let svg_tooltip = d3.select('#svg_tooltip')
+                        svg_tooltip.selectAll('g').remove()
+                        svg_tooltip.append('g')
+                            .append('text')
+                            .attr('x', -15)
+                            .attr('y', 20)
+                            .text('State: ')
+                        svg_tooltip.append('g')
+                            .append('text')
+                            .attr('x', -5)
+                            .attr('y', 35)
+                            .style('font-weight', 'bold')
+                            .text(name)
+                        svg_tooltip.append('g')
+                            .append('text')
+                            .attr('x', -15)
+                            .attr('y', 50)
+                            .text('Avg Income:')
+                        svg_tooltip.append('g')
+                            .append('text')
+                            .attr('x', -5)
+                            .attr('y', 65)
+                            .style('font-weight', 'bold')
+                            .text('$' + income_display)
+
+
+                }
+
+            }
+
+
+        </script>
+
+    </body>
+</html>
